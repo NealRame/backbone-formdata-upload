@@ -109,3 +109,35 @@ a {
 .add-files:hover {
     background-color: #444;
 }
+
+#products {
+    position: relative;
+    margin: 16px;
+    list-style-type: none;
+}
+
+#products li {
+    position: relative;
+    float: left;
+    margin: 8px;
+}
+
+#products li a {
+    position: relative;
+    top: 0; left: 0;
+    display: block;
+}
+
+#products li a.remove-btn {
+    position: absolute;
+    color: red;
+    display: none;
+    top: 0; left: 112px;
+    width: 16px;
+    height: 16px;
+    text-decoration: none;
+}
+
+#products li a.remove-btn::after {
+    content: '✖︎';
+}

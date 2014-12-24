@@ -52,7 +52,7 @@ syncProduct = function(method, model, options) {
         break;
 
     default:
-        return Backbone.sync.call(this, method, model, option);
+        return Backbone.sync.call(this, method, model, options);
     }
 };
 
@@ -120,6 +120,25 @@ app.ProductView = Backbone.View.extend({
 app.ItemView = Backbone.View.extend({
     tagName: 'li',
     template: _.template($('#product-item-template').html()),
+    events: {
+        'mouseenter': 'onMouseEnter',
+        'mouseleave': 'onMouseLeave',
+        'click .remove-btn': 'onRemoveButtonClick'
+    },
+    onMouseEnter: function(e) {
+        this.$('.remove-btn').fadeIn();
+        return false;
+    },
+    onMouseLeave: function(e) {
+        this.$('.remove-btn').fadeOut();
+        return false;
+    },
+    onRemoveButtonClick: function(e) {
+        e.preventDefault();
+        this.model.destroy();
+        console.log('destroy');
+        return false;
+    },
     render: function() {
         this.$el.html(this.template(
                 _.extend(

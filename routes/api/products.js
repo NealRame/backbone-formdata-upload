@@ -3,6 +3,7 @@ var async = require('async');
 var express = require('express');
 var formidableGrid = require('formidable-grid');
 var gm = require('gm');
+var GridFs = require('gridfs-stream');
 var mongo = require('mongodb');
 var path = require('path');
 var Product = require('models/product');
@@ -118,10 +119,6 @@ function create_product(req, res) {
                 pictures,
                 handle_file.bind(null, form.gridFs),
                 function(err, pictures) {
-
-                    console.log('-- error   : ' + inspect(err));
-                    console.log('-- pictures: ' + inspect(pictures));
-
                     if (err) {
                         error(res, err);
                     } else {
@@ -148,15 +145,51 @@ router
         .post(create_product);
 
 router
+    .param('id', function(req, res, next, id) {
+        Product
+            .findById(id)
+            .exec()
+                .then(function(product) {
+                    req.product = product;
+                    next();
+                })
+                .then(null, next);
+    })
     .route('/:id')
         .get(function(req, res) {
+            console.log(req.product);
             error(res, new Error('Not implemented'));
         })
         .put(function(req, res) {
+            console.log(req.product);
             error(res, new Error('Not implemented'));
         })
         .delete(function(req, res) {
-            error(res, new Error('Not implemented'));
+            console.log(req.product);
+
+            var gfs = GridFs(req.db, mongo);
+
+            async.map(
+                req.product.pictures,
+                function(picture, next) {
+                    async.map(
+                        _.chain(picture).pick('original', 'thumbnail').values().value(),
+                        function(id, file_next) {
+                            gfs.collection('fs').remove({ _id: id}, file_next);
+                        },
+                        next
+                    );
+                },
+                function(err) {
+                    req.product.remove(function(rm_err) {
+                        if (rm_err) {
+                            error(res, rm_err);
+                        } else {
+                            res.sendStatus(200);
+                        }
+                    });
+                }
+            );
         });
 
 module.exports = router;
