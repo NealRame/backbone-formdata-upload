@@ -1,0 +1,51 @@
+extends layout
+
+block content
+    h1= title
+    
+    #product-creator
+        #fields
+            .field-row
+                input#name(type='text')
+                label(for='name'): | Name
+            
+            .field-row
+                textarea#desc(type='text', rows=4)
+                label(for='desc'): | Description
+            
+        .add-files(draggable='true')
+            span: | Ajouter des images
+            input(type='file', multiple)
+        #pictures
+        input(type='submit' value='Ok')
+            
+    ul#products
+
+    script#product-template(type='text/template').
+        <header>
+            <h1><%- name %></h1>
+            <span><%- date %></span>
+        </header>
+        <p><%- description %></p>
+        <ul>
+            <% _.each(pictures, function(picture) { %>
+            <li>
+                <a href="/files/<%= picture.original %>">
+                    <img src="/files/<%= picture.thumbnail %>">
+                </a>
+            </li>
+            <% }); %>
+        </ul>
+    
+        
+    script#product-item-template(type='text/template').
+        <a href="/files/<%= pictures[index].original %>">
+            <img src="/files/<%= pictures[index].thumbnail %>">
+        </a>
+        
+    
+    script#upload-item-template(type='text/template').
+        <%- name %> - <%- size %> bytes
+        <div class='progress'/>
+    
+    script(src='/javascripts/app.js')

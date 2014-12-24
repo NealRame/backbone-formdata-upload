@@ -1,0 +1,111 @@
+body {
+    padding: 50px;
+    font: 14px "Lucida Grande", Helvetica, Arial, sans-serif;
+}
+
+a {
+    color: #00B7FF;
+}
+
+#product-creator {
+    border: 1px solid lightgray;
+    font-weight: bold;
+    margin: 0 auto;
+    overflow: auto;
+    padding: 2px;
+    width: 75%;
+}
+
+#product-creator #fields {
+    color: lightgray;
+    margin: 1px;
+}
+
+#product-creator #fields .field-row {
+    overflow: auto;
+    width: 100%;
+}
+
+#product-creator #fields .field-row * {
+    float: right;
+    width: 70%;
+}
+
+#product-creator #fields .field-row label {
+    float: left;
+    width: 25%;
+}
+
+#product-creator #fields textarea {
+    border: 1px solid lightgray;
+    float: right;
+    resize: vertical;
+}
+
+#product-creator #pictures {
+    position: relative;
+    background-color: lightgray;
+    margin: 1px;
+    min-height: 64px;
+    overflow: auto;
+}
+
+#product-creator #pictures[data-state=over] {
+    border: 1px dashed green;
+}
+
+#product-creator #pictures .thumb {
+    height: 96px;
+    width: 96px;
+    margin: 2px;
+    float: left;
+    overflow: hidden;
+}
+
+#product-creator #pictures .thumb img {
+    position: relative;
+}
+
+#product-creator input[type=submit] {
+    background-color: gray;
+    border: 1px solid black;
+    clear: both;
+    cursor: pointer;
+    display: block;
+    padding: 4px;
+    font-size: inherit;
+    font-weight: inherit;
+    width: 96px;
+    margin: 1px auto;
+}
+
+#product-creator input[type=submit]:hover {
+    background-color: #444;
+}
+
+.add-files {
+    background-color: gray;
+    border: 1px solid black;
+    margin: 2px 1px;
+    overflow: hidden;
+    padding: 4px;
+    position: relative;
+    text-align: center;
+}
+
+.add-files input[type=file] {
+    position: absolute;
+    bottom: 0;
+    right: 0;
+    top: 0;
+    left: -112px;
+    margin: 0;
+    padding: 0;
+    cursor: pointer;
+    opacity: 0;
+    filter: alpha(opacity=0);
+}
+
+.add-files:hover {
+    background-color: #444;
+}

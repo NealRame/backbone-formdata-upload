@@ -1,0 +1,18 @@
+#!/usr/bin/env node
+var debug = require('debug')('backbone-formdata-upload');
+var make_application = require('../app');
+var http = require('http');
+
+make_application(debug, function(err, app) {
+    if (err) {
+        console.err(err);
+        process.exit(1);
+    }
+
+    var port = process.env.PORT || 3000;
+    var server = http.createServer(app);
+
+    server.listen(port, function() {
+        debug('Express server listening on port ' + server.address().port);
+    });
+});
