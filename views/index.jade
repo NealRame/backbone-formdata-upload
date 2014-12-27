@@ -16,11 +16,11 @@ block content
         .add-files(draggable='true')
             span: | Ajouter des images
             input(type='file', multiple)
-        #pictures
+        ul.thumbnails#pictures
         input(type='submit' value='Ok')
             
-    ul#products
-
+    ul.thumbnails#products
+    
     script#product-template(type='text/template').
         <header>
             <h1><%- name %></h1>
@@ -42,7 +42,10 @@ block content
         <a href="/files/<%= pictures[index].original %>">
             <img src="/files/<%= pictures[index].thumbnail %>">
         </a>
-        <a class="remove-btn" href="#"></a>
+        <div class="edit-bar">
+            <a class="remove-btn" href="#"></a>
+            <a class="edit-btn" href="#"></a>
+        </div>
     
     script#upload-item-template(type='text/template').
         <%- name %> - <%- size %> bytes
