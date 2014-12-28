@@ -76,7 +76,7 @@ a {
 }
 
 .action-bar a {
-    color: blue;
+    color: lightgray;
     float: right;
     width: 16px;
     height: 16px;
@@ -85,42 +85,6 @@ a {
 
 .action-bar a:hover {
     color: red;
-}
-
-.action-bar a.remove-btn::after {
-    content: '✖︎';
-}
-
-.action-bar a.edit-btn::after {
-    content: '✎';
-}
-
-
-
-
-#product-creator #pictures {
-    position: relative;
-    background-color: lightgray;
-    margin: 1px;
-    min-height: 64px;
-    overflow: auto;
-}
-
-#product-creator #pictures[data-state=over] {
-    border: 1px dashed green;
-}
-
-#product-creator #pictures .thumb {
-    /*height: 96px;
-    width: 96px;*/
-    position: relative;
-    margin: 2px;
-    float: left;
-    overflow: hidden;
-}
-
-#product-creator #pictures .thumb img {
-    position: relative;
 }
 
 #product-creator input[type=submit] {

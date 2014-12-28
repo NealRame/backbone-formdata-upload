@@ -22,8 +22,8 @@ syncProduct = function(method, model, options) {
 
                     form_data.append(
                         'pictures',
-                        picture instanceof File
-                            ? picture
+                        picture.file instanceof File
+                            ? picture.file
                             : escape(JSON.stringify(picture))
                     );
                 });
@@ -49,6 +49,11 @@ syncProduct = function(method, model, options) {
 
     case 'update':
     case 'patch':
+        return (function() {
+            var data = model.changed;
+            console.log(method, data, model.url(), options.url);
+        })();
+
         break;
 
     default:
@@ -72,13 +77,20 @@ app.Product = Backbone.Model.extend({
     addPicture: function(picture) {
         var list = this.get('pictures').slice(0);
         if (! _.contains(list, picture)) {
-            list.push(picture);
+            list.push(picture instanceof File ? {file: picture} : picture);
+            this.set({pictures: list});
+        }
+    },
+    removePictureAtIndex: function(index) {
+        var list = this.get('pictures').slice(0);
+        if (index < list.length) {
+            list.splice(index, 1);
             this.set({pictures: list});
         }
     },
     validate: function(attributes, options) {
         var isValidPicture = function(picture) {
-            return picture instanceof File
+            return picture.file instanceof File
                     || (picture.original && picture.thumbnail);
         };
 
@@ -92,7 +104,7 @@ app.Product = Backbone.Model.extend({
 
         if (! (attributes.pictures instanceof Array
                 && _.every(attributes.pictures, isValidPicture))) {
-            return new Error('pictures must be an Array of valid pictures');
+            return new Error('pictures must be a non empty Array of valid pictures');
         }
 
         if (! (attributes.tags instanceof Array
@@ -108,11 +120,14 @@ app.Thumbnail = Backbone.Model.extend({
         this.unset('original',  {silent: true});
         this.unset('thumbnail', {silent: true});
         this.unset('file',      {silent: true});
-        this.set(
-            picture instanceof File
-                ? {file: picture}
-                : _.pick(picture, 'original', 'thumbnail')
-        );
+        this.set(picture);
+    },
+    validate: function(attributes) {
+        if (! (attributes.file instanceof File)
+                || (attributes.thumbnail instanceof String
+                        && attributes.original instanceof String)) {
+            return new Error('invalid thumbnail data')
+        }
     }
 });
 
@@ -135,10 +150,11 @@ app.ThumbnailView = Backbone.View.extend({
             this.options,
             _.pick(options || {}, 'removable', 'editable', 'side')
         );
+        return this;
     },
     onActionRequested: function(e) {
         e.preventDefault();
-        this.trigger($(e.target).attr('data-action'), this.model);
+        this.trigger($(e.currentTarget).attr('data-action'), this.model);
         return false;
     },
     onMouseEnter: function(e) {
@@ -149,73 +165,128 @@ app.ThumbnailView = Backbone.View.extend({
         this.$('.action-bar').fadeOut(100);
         return false;
     },
-    createThumb: function() {
-        var data = this.model.toJSON();
-        var img = new Image;
-        var side = this.options.side;
-
-        img.onload = function() {
-            var w = img.width, h = img.height, r = w/h;
-
-            if (r > 1) {
-                w = side*r;
-                $(img).css({
-                    left: (side - w)/2,
-                    width: w,
-                    height: side
-                });
-            } else {
-                h = side/r;
-                $(img).css({
-                    top: (side - h)/2,
-                    width: side,
-                    height: h
-                });
-            }
-        };
-
-        if (data.file instanceof File) {
-            var reader = new FileReader;
-            reader.onload = (function(e) {
-                img.src = e.target.result;
-            });
-            reader.readAsDataURL(data.file);
-        } else {
-            img.src = 'files/' + data.thumbnail;
-        }
-
-        return $(img);
-    },
-    createActionBar: function() {
-        var actions = [];
-
-        if (this.options.removable) {
-            actions.push(
-                $(document.createElement('a'))
-                    .addClass('remove-btn')
-                    .attr('href', '#')
-                    .attr('data-action', 'remove')
-            );
-        }
-
-        if (this.options.editable) {
-            actions.push(
-                $(document.createElement('a'))
-                    .addClass('edit-btn')
-                    .attr('href', '#')
-                    .attr('data-action', 'edit')
-            );
-        }
-
-        return $(document.createElement('div')).addClass('action-bar').append(actions);
-    },
     render: function() {
         var side = this.options.side;
+
+        var createSpinner = (function() {
+            var fontSize = side/4;
+            var shift = 3*fontSize/2;
+
+            return $(document.createElement('i'))
+                .addClass('fa fa-circle-o-notch fa-spin')
+                .css({
+                    position: 'absolute',
+                    fontSize: fontSize,
+                    height: fontSize,
+                    width: fontSize,
+                    left: shift,
+                    top:  shift
+                });
+        }).bind(this);
+
+        var createPlaceholder = (function() {
+            var fontSize = side - 32;
+            var shift = (side - fontSize)/2;
+
+            return $(document.createElement('i'))
+                .addClass('fa fa-ban fa-fw')
+                .css({
+                    color: 'lightgray',
+                    position: 'absolute',
+                    fontSize: fontSize,
+                    height: fontSize,
+                    width: fontSize,
+                    left: shift,
+                    top:  shift
+                });
+        }).bind(this);
+
+        var createActionBar = (function() {
+            var actions = [];
+
+            if (this.options.removable) {
+                actions.push(
+                    $(document.createElement('a'))
+                    .attr('href', '#')
+                    .attr('data-action', 'remove')
+                    .append($(document.createElement('i')).addClass('fa fa-trash'))
+                );
+            }
+
+            if (this.options.editable) {
+                actions.push(
+                    $(document.createElement('a'))
+                    .attr('href', '#')
+                    .attr('data-action', 'edit')
+                    .append($(document.createElement('i')).addClass('fa fa-pencil'))
+                );
+            }
+
+            return $(document.createElement('div')).addClass('action-bar').append(actions);
+        }).bind(this);
+
+        var createThumb = (function(cb) {
+            if (! this.model) {
+                var elt = createPlaceholder();
+                if (cb) {
+                    cb.call(this, elt);
+                }
+                return elt;
+            }
+
+            this.$el.append(createSpinner());
+
+            var view = this;
+            var data = this.model.toJSON();
+            var img = new Image;
+
+            img.onload = function() {
+                var w = img.width, h = img.height, r = w/h;
+
+                if (r > 1) {
+                    w = side*r;
+                    $(img).css({
+                        left: (side - w)/2,
+                        width: w,
+                        height: side
+                    });
+                } else {
+                    h = side/r;
+                    $(img).css({
+                        top: (side - h)/2,
+                        width: side,
+                        height: h
+                    });
+                }
+
+                if (cb) {
+                    cb.call(view, $(img));
+                }
+            };
+
+            if (data.file instanceof File) {
+                var reader = new FileReader;
+                reader.onload = (function(e) {
+                    img.src = e.target.result;
+                });
+                reader.readAsDataURL(data.file);
+            } else {
+                img.src = 'files/' + data.thumbnail;
+            }
+
+            return $(img);
+        }).bind(this);
+
         this.$el.empty();
-        this.$el
-            .css({width:  side, height: side})
-            .append(this.createThumb())
-            .append(this.createActionBar());
+        this.$el.css({width: side, height: side});
+
+        createThumb(function(thumb) {
+            // this.$('i').remove();
+            this.$el
+                .append(thumb)
+                .append(createActionBar());
+        });
+
         return this;
     }
 });
@@ -231,18 +302,18 @@ app.ItemView = Backbone.View.extend({
         this.listenTo(this.model, 'change', this.render);
     },
     render: function() {
-        this.stopListening();
-
-        var thumb = new app.Thumbnail;
+        var pictures = this.model.get('pictures');
         var thumb_view = new app.ThumbnailView({
-            model: thumb
+            model: pictures.length > 0 ? new app.Thumbnail(pictures[0]) : null
         });
 
-        thumb.setPicture(this.model.get('pictures')[0]);
-
+        this.stopListening();
         this.listenTo(thumb_view, 'remove', function() {
             this.model.destroy();
             thumb_view.remove();
+        });
+        this.listenTo(thumb_view, 'edit', function() {
+            productCreator.setModel(this.model);
         });
         this.$el.append(thumb_view.render().el);
 
@@ -271,11 +342,39 @@ app.ProductsView = Backbone.View.extend({
 });
 
 app.ProductPictureListView = Backbone.View.extend({
+    tagName: 'ul',
+    className: 'thumbnails',
     events: {
         'dragenter': 'onDragEnter',
         'dragleave': 'onDragLeave',
         'dragover':  'onDragOver',
         'drop':      'onDrop',
+    },
+    initialize: function() {
+        this.options = {
+            side: 128,
+        };
+    },
+    configure: function(options) {
+        _.extend(
+            this.options,
+            _.pick(options || {}, 'removable', 'editable', 'side')
+        );
+        return this;
+    },
+    resize: function() {
+        var w = Math.floor(this.$el.get(0).getBoundingClientRect().width);
+        var thumb_width = this.options.side + 4;
+        var n = Math.floor(w/thumb_width);
+
+        this.$el.css({
+            padding: '0 ' + Math.floor((w - n*thumb_width)/2) + 'px',
+        });
+        return this;
+    },
+    onResize: function(e) {
+        this.resize();
+        return false;
     },
     onDragEnter: function(e) {
         // console.log(e, 'enter');
@@ -306,50 +405,51 @@ app.ProductPictureListView = Backbone.View.extend({
         return false;
     },
     onDrop: function(e) {
-        // console.log(e, 'drop');
-
         this.onDragLeave.call(this, e);
         this.trigger('add-pictures', e.dataTransfer.files);
 
         return false;
     },
     render: function() {
+        this.$el.empty();
         _.each(
             this.model.get('pictures'),
             function(picture, index) {
-                var thumb = new app.Thumbnail;
                 var thumb_view = new app.ThumbnailView({
-                    model: thumb
+                    model: new app.Thumbnail(picture)
                 });
-
-                thumb.setPicture(picture);
-                thumb_view.configure({editable: false});
 
                 this.listenTo(thumb_view, 'remove', function() {
                     this.trigger('remove-picture', index);
                 });
-                this.$el.append(thumb_view.render().el);
+                this.$el.append(
+                    $(document.createElement('li'))
+                        .append(
+                            thumb_view
+                                .configure({editable: false})
+                                .render().el
+                        )
+                );
             },
             this
         );
+
+        this.listenTo(this.model, 'change:pictures', this.render);
+        $(window).resize(this.onResize.bind(this));
+
+        return this;
     }
 });
 
 app.ProductCreator = Backbone.View.extend({
     el: '#product-creator',
     events: {
-        'click     input[type=submit]': 'onOkClicked',
-        'change    .add-files > input': 'onAddFiles',
-        'dragenter #pictures': 'onDragEnter',
-        'dragleave #pictures': 'onDragLeave',
-        'dragover  #pictures': 'onDragOver',
-        'drop      #pictures': 'onDrop',
-        'blur      #name': 'onNameChanged',
-        'blur      #desc': 'onDescriptionChanged'
+        'blur   #name': 'onNameChanged',
+        'blur   #desc': 'onDescriptionChanged',
+        'change .add-files > input': 'onAddPictures',
+        'click  input[type=submit]': 'onOkClicked',
     },
     initialize: function() {
-        $(window).resize(this.onResize.bind(this));
-        this.onResize(null);
         this.reset();
     },
     setModel: function(model) {
@@ -359,10 +459,19 @@ app.ProductCreator = Backbone.View.extend({
         this.model = model || new app.Product;
         this.listenTo(this.model, 'destroy', this.reset);
         this.listenTo(this.model, 'change:pictures', this.render);
+        this.render();
     },
     reset: function() {
         this.setModel();
-        this.render();
+    },
+    addPictures: function(files) {
+        _.each(
+            files,
+            function(file) {
+                this.model.addPicture(file);
+            },
+            this
+        );
     },
     onOkClicked: function() {
         if (this.model.isNew()) {
@@ -375,59 +484,16 @@ app.ProductCreator = Backbone.View.extend({
         }
         return false;
     },
-    onResize: function(e) {
-        var pictures = this.$('#pictures');
-        var w = Math.floor(pictures.get(0).getBoundingClientRect().width);
-        var n = Math.floor(w/(96 + 4));
-
-        pictures.css({
-            padding: '0 ' + Math.floor((w - n*(96 + 4))/2) + 'px',
-        });
-        return false;
-    },
-    onAddFiles: function(e) {
+    onAddPictures: function(e) {
         e.preventDefault();
         e.stopPropagation();
 
-        _.each(e.target.files, this.addFile, this);
+        this.addPictures(e.target.files);
 
         return false;
     },
-    onDragEnter: function(e) {
-        // console.log(e, 'enter');
-
-        e.preventDefault();
-        e.stopPropagation();
-
-        this.$('#pictures').attr('data-state', 'over');
-        this.onResize(null);
-
-        return false;
-    },
-    onDragLeave: function(e) {
-        // console.log(e, 'leave');
-
-        e.preventDefault();
-        e.stopPropagation();
-
-        this.$('#pictures').removeAttr('data-state');
-
-        return false;
-    },
-    onDragOver: function(e) {
-        e.dataTransfer.dropEffect = 'copy';
-        e.preventDefault();
-        e.stopPropagation();
-
-        return false;
-    },
-    onDrop: function(e) {
-        // console.log(e, 'drop');
-
-        this.onDragLeave.call(this, e);
-        _.each(e.dataTransfer.files, this.addFile, this);
-
-        return false;
+    onRemovePicture: function(index) {
+        this.model.removePictureAtIndex(index);
     },
     onNameChanged: function() {
         this.model.set('name', this.$('#name').val().trim());
@@ -437,70 +503,24 @@ app.ProductCreator = Backbone.View.extend({
         this.model.set('description', this.$('#desc').val());
         return false;
     },
-    addFile: function(file) {
-        this.model.addPicture(file);
-    },
     render: function() {
-        var pictures = this.$('#pictures');
-        var create_thumb = function(source) {
-
-            var thumb =
-                $(document.createElement('div'))
-                    .addClass('thumb')
-                    .css({width: 128, height: 128});
-
-            var edit_bar =
-                $(document.createElement('div'))
-                    .addClass('edit-bar')
-                    .html('<a class="remove-btn" href="#"></a>');
-
-            pictures.append(thumb);
-
-            var img = new Image;
-            img.onload = function() {
-                var w = img.width, h = img.height, r = w/h;
-
-                if (r > 1) {
-                    w = 128*r;
-                    $(img).css({
-                        left: (128 - w)/2,
-                        width: w,
-                        height: 128
-                    });
-                } else {
-                    h = 128/r;
-                    $(img).css({
-                        top: (128 - h)/2,
-                        width: 128,
-                        height: h
-                    });
-                }
-
-                thumb.append([img, edit_bar]);
-            };
-
-            if (source instanceof File) {
-                var reader = new FileReader;
-
-                reader.onload = (function(e) {
-                    img.src = e.target.result;
-                });
-                reader.readAsDataURL(source);
-            } else {
-                img.src = 'files/' + source.thumbnail;
-            }
-        };
-
-        pictures.empty();
-
-        if (this.model) {
-            this.$('#desc').val(this.model.get('description'));
-            this.$('#name').val(this.model.get('name'));
-            _.each(this.model.get('pictures'), create_thumb);
-        } else {
-            this.$('#desc').val('');
-            this.$('#name').val('');
+        if (this.pictureListView) {
+            this.pictureListView.stopListening();
+            this.pictureListView.remove();
         }
+
+        this.pictureListView = new app.ProductPictureListView({
+            model: this.model
+        });
+
+        this.listenTo(this.pictureListView, 'add-pictures',   this.addPictures);
+        this.listenTo(this.pictureListView, 'remove-picture', this.onRemovePicture);
+
+        this.$('#pictures').append(this.pictureListView.render().el);
+        this.$('#desc').val(this.model.get('description'));
+        this.$('#name').val(this.model.get('name'));
+
+        this.pictureListView.resize();
     },
 });
 
