@@ -3,57 +3,56 @@ $.event.props.push('dataTransfer');
 var app = app || {};
 
 syncProduct = function(method, model, options) {
+    var VERBS = {
+        create: 'POST',
+        update: 'PUT',
+        patch:  'PATCH'
+    };
+
+    console.log(method, model, options);
+
     switch (method.toLowerCase()) {
     case 'create':
+    case 'update':
+    case 'patch':
         return (function() {
+            var data = method === 'patch' ? model.changed : model.attributes;
             var form_data = new FormData;
-            var data = model.toJSON();
 
-            if (data.name) {
-                form_data.append('name', data.name);
-            }
-
-            if (data.description) {
-                form_data.append('description', data.description);
-            }
-
-            if (data.pictures) {
-                _.each(data.pictures, function(picture) {
-
+            _.chain(data)
+                .pick('name', 'description', 'published', 'tags')
+                .each(function(value, attr) {
                     form_data.append(
-                        'pictures',
-                        picture.file instanceof File
-                            ? picture.file
-                            : escape(JSON.stringify(picture))
+                        attr, _.isString(value) ? value : JSON.stringify(value)
                     );
                 });
-            }
+
+            _.each(data.pictures, function(picture) {
+                form_data.append(
+                    'pictures',
+                    picture.file instanceof File
+                        ? picture.file
+                        : JSON.stringify(picture)
+                );
+            });
 
             var params = _.extend(
                 {
                     data: form_data,
                     contentType: false,
                     processData: false,
-                    type: 'POST',
+                    type: VERBS[method],
                     url: options.url || model.url(),
                 },
                 options
             );
+
             var xhr = Backbone.ajax(params);
 
             model.trigger('request', model, xhr, options);
 
             return xhr;
         })();
-        break;
-
-    case 'update':
-    case 'patch':
-        return (function() {
-            var data = model.changed;
-            console.log(method, data, model.url(), options.url);
-        })();
-
         break;
 
     default:
@@ -113,6 +112,11 @@ app.Product = Backbone.Model.extend({
         }
     },
     sync: syncProduct.bind(this)
+});
+
+app.Products = Backbone.Collection.extend({
+    model: app.Product,
+    url: '/api/products'
 });
 
 app.Thumbnail = Backbone.Model.extend({
@@ -289,11 +293,6 @@ app.ThumbnailView = Backbone.View.extend({
 
         return this;
     }
-});
-
-app.Products = Backbone.Collection.extend({
-    model: app.Product,
-    url: '/api/products'
 });
 
 app.ItemView = Backbone.View.extend({
