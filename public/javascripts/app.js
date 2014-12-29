@@ -3,12 +3,6 @@ $.event.props.push('dataTransfer');
 var app = app || {};
 
 syncProduct = function(method, model, options) {
-    var VERBS = {
-        create: 'POST',
-        update: 'PUT',
-        patch:  'PATCH'
-    };
-
     console.log(method, model, options);
 
     switch (method.toLowerCase()) {
@@ -16,17 +10,19 @@ syncProduct = function(method, model, options) {
     case 'update':
     case 'patch':
         return (function() {
-            var data = method === 'patch' ? model.changed : model.attributes;
+            var data = model.attributes;
             var form_data = new FormData;
 
             _.chain(data)
-                .pick('name', 'description', 'published', 'tags')
+                .pick('name', 'description', 'published')
                 .each(function(value, attr) {
                     form_data.append(
-                        attr, _.isString(value) ? value : JSON.stringify(value)
-                    );
+                        attr,
+                        attr === 'tags'
+                            ? escape(JSON.stringify(value))
+                            : value
+                    )
                 });
-
             _.each(data.pictures, function(picture) {
                 form_data.append(
                     'pictures',
@@ -41,7 +37,7 @@ syncProduct = function(method, model, options) {
                     data: form_data,
                     contentType: false,
                     processData: false,
-                    type: VERBS[method],
+                    type: method === 'create' ? 'POST':'PUT',
                     url: options.url || model.url(),
                 },
                 options
