@@ -72,16 +72,24 @@ app.Product = Backbone.Model.extend({
     addPicture: function(picture) {
         var list = this.get('pictures').slice(0);
         if (! _.contains(list, picture)) {
-            list.push(picture instanceof File ? {file: picture} : picture);
+            var index = list.length;
+            if (picture instanceof File) {
+                picture = {file: picture};
+            }
+            list.push(picture);
             this.set({pictures: list});
+            this.trigger('new-picture', picture, index);
+            return list[index];
         }
     },
     removePictureAtIndex: function(index) {
         var list = this.get('pictures').slice(0);
         if (index < list.length) {
-            list.splice(index, 1);
+            var picture = (list.splice(index, 1))[0];
             this.set({pictures: list});
+            return true;
         }
+        return false;
     },
     validate: function(attributes, options) {
         var isValidPicture = function(picture) {
@@ -92,16 +100,13 @@ app.Product = Backbone.Model.extend({
         if (! attributes.name instanceof String) {
             return new Error('name must be a String');
         }
-
         if (! attributes.description instanceof String) {
             return new Error('description mus be a String');
         }
-
         if (! (attributes.pictures instanceof Array
                 && _.every(attributes.pictures, isValidPicture))) {
             return new Error('pictures must be a non empty Array of valid pictures');
         }
-
         if (! (attributes.tags instanceof Array
                 && _.every(attributes.tags, _.isString))) {
             return new Error('tags must be an Array of String');
@@ -281,7 +286,7 @@ app.ThumbnailView = Backbone.View.extend({
         this.$el.css({width: side, height: side});
 
         createThumb(function(thumb) {
-            // this.$('i').remove();
+            this.$('i').remove();
             this.$el
                 .append(thumb)
                 .append(createActionBar());
@@ -340,15 +345,16 @@ app.ProductPictureListView = Backbone.View.extend({
     tagName: 'ul',
     className: 'thumbnails',
     events: {
-        'dragenter': 'onDragEnter',
-        'dragleave': 'onDragLeave',
-        'dragover':  'onDragOver',
-        'drop':      'onDrop',
+        'dragenter':     'onDragEnter',
+        'dragleave':     'onDragLeave',
+        'dragover':      'onDragOver',
+        'drop':          'onDrop'
     },
     initialize: function() {
         this.options = {
             side: 128,
         };
+        this.listenTo(this.model, 'new-picture', this.onNewPicture);
     },
     configure: function(options) {
         _.extend(
@@ -361,77 +367,65 @@ app.ProductPictureListView = Backbone.View.extend({
         var w = Math.floor(this.$el.get(0).getBoundingClientRect().width);
         var thumb_width = this.options.side + 4;
         var n = Math.floor(w/thumb_width);
-
         this.$el.css({
             padding: '0 ' + Math.floor((w - n*thumb_width)/2) + 'px',
         });
         return this;
     },
-    onResize: function(e) {
-        this.resize();
-        return false;
-    },
     onDragEnter: function(e) {
-        // console.log(e, 'enter');
-
         e.preventDefault();
         e.stopPropagation();
-
         this.$el.attr('data-state', 'over');
         this.onResize(null);
-
         return false;
     },
     onDragLeave: function(e) {
-        // console.log(e, 'leave');
-
         e.preventDefault();
         e.stopPropagation();
-
         this.$el.removeAttr('data-state');
-
         return false;
     },
     onDragOver: function(e) {
         e.dataTransfer.dropEffect = 'copy';
         e.preventDefault();
         e.stopPropagation();
-
         return false;
     },
     onDrop: function(e) {
         this.onDragLeave.call(this, e);
-        this.trigger('add-pictures', e.dataTransfer.files);
-
+        this.addFiles(e.dataTransfer.files);
         return false;
     },
-    render: function() {
-        this.$el.empty();
-        _.each(
-            this.model.get('pictures'),
-            function(picture, index) {
-                var thumb_view = new app.ThumbnailView({
-                    model: new app.Thumbnail(picture)
-                });
+    addFiles: function(files) {
+        _.each(files, this.addFile, this);
+    },
+    addFile: function(file) {
+        this.model.addPicture(file);
+    },
+    addPictures: function(pictures) {
+        _.each(pictures, this.onNewPicture, this);
+    },
+    onNewPicture: function(picture, index) {
+        var thumb_view = new app.ThumbnailView({
+            model: new app.Thumbnail(picture)
+        });
 
-                this.listenTo(thumb_view, 'remove', function() {
-                    this.trigger('remove-picture', index);
-                });
-                this.$el.append(
-                    $(document.createElement('li'))
-                        .append(
-                            thumb_view
-                                .configure({editable: false})
-                                .render().el
-                        )
-                );
-            },
-            this
+        this.listenTo(
+            thumb_view, 'remove',
+            function() {
+                this.stopListening(thumb_view);
+                this.model.removePictureAtIndex(index);
+                thumb_view.remove();
+                this.$el.children().slice(index, index + 1).remove();
+            }
         );
-
-        this.listenTo(this.model, 'change:pictures', this.render);
-        $(window).resize(this.onResize.bind(this));
-
+        this.$el.append(
+            $(document.createElement('li'))
+                .append(thumb_view.configure({editable: false}).render().el)
+        );
+    },
+    render: function() {
+        this.addPictures(this.model.get('pictures'));
         return this;
     }
 });
@@ -453,20 +447,10 @@ app.ProductCreator = Backbone.View.extend({
         }
         this.model = model || new app.Product;
         this.listenTo(this.model, 'destroy', this.reset);
-        this.listenTo(this.model, 'change:pictures', this.render);
         this.render();
     },
     reset: function() {
         this.setModel();
-    },
-    addPictures: function(files) {
-        _.each(
-            files,
-            function(file) {
-                this.model.addPicture(file);
-            },
-            this
-        );
     },
     onOkClicked: function() {
         if (this.model.isNew()) {
@@ -479,12 +463,13 @@ app.ProductCreator = Backbone.View.extend({
         }
         return false;
     },
+    onResize: function() {
+        this.pictureListView.resize();
+    },
     onAddPictures: function(e) {
         e.preventDefault();
         e.stopPropagation();
-
-        this.addPictures(e.target.files);
-
+        this.pictureListView.addFiles(e.target.files);
         return false;
     },
     onRemovePicture: function(index) {
@@ -503,19 +488,15 @@ app.ProductCreator = Backbone.View.extend({
             this.pictureListView.stopListening();
             this.pictureListView.remove();
         }
-
         this.pictureListView = new app.ProductPictureListView({
             model: this.model
         });
-
-        this.listenTo(this.pictureListView, 'add-pictures',   this.addPictures);
-        this.listenTo(this.pictureListView, 'remove-picture', this.onRemovePicture);
-
         this.$('#pictures').append(this.pictureListView.render().el);
         this.$('#desc').val(this.model.get('description'));
         this.$('#name').val(this.model.get('name'));
+        this.onResize();
 
-        this.pictureListView.resize();
+        $(window).resize(this.onResize.bind(this));
     },
 });
 
