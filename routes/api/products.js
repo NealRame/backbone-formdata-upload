@@ -121,11 +121,9 @@ function create_pictures(gfs, files) {
 
 function delete_picture(gfs, picture) {
     var promise = new mongoose.Promise;
-    console.log(inspect(picture));
     async.each(
         _.chain(picture).pick('original', 'thumbnail').values().value(),
         function(id, next) {
-            console.log(typeof(id));
             gfs.remove({ _id: id.toString()}, next);
         },
         promise.resolve.bind(promise)
