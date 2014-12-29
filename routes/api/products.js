@@ -5,6 +5,7 @@ var formidableGrid = require('formidable-grid');
 var gm = require('gm');
 var GridFs = require('gridfs-stream');
 var mongo = require('mongodb');
+var mongoose = require('mongoose');
 var path = require('path');
 var Product = require('models/product');
 var querystring = require('querystring');
@@ -23,9 +24,20 @@ function error(res, err) {
     });
 };
 
-function handle_file(gfs, file, next) {
+function create_picture(gfs, file) {
+    var promise = new mongoose.Promise;
+
+    if (_.isString(file.thumbnail) && _.isString(file.original)) {
+        promise.fulfill({
+            original:  new mongo.ObjectID(file.original),
+            thumbnail: new mongo.ObjectID(file.thumbnail)
+        });
+        return promise;
+    }
+
     if (! file.name) {
-        return next(null, file);
+        promise.error(new Error('Invalid data'));
+        return promise;
     }
 
     var ext = path.extname(file.name);
@@ -48,8 +60,8 @@ function handle_file(gfs, file, next) {
     });
 
     output_stream
-        .once('error', next)
-        .once('close', next.bind(null, null, {
+        .once('error', promise.error.bind(promise))
+        .once('close', promise.fulfill.bind(promise, {
             original: file.id,
             thumbnail: thumb.id
         }));
@@ -91,48 +103,81 @@ function handle_file(gfs, file, next) {
                 .stream(ext)
                 .pipe(output_stream);
         });
+
+    return promise;
 };
 
-function create_product(req, res) {
-    var pictures = [];
-    var product = {};
+function create_pictures(gfs, files) {
+    var promise = new mongoose.Promise;
+    async.map(
+        files,
+        function(file, next) {
+            create_picture(gfs, file).addBack(next);
+        },
+        promise.resolve.bind(promise)
+    );
+    return promise;
+};
+
+function delete_picture(gfs, picture) {
+    var promise = new mongoose.Promise;
+    console.log(inspect(picture));
+    async.each(
+        _.chain(picture).pick('original', 'thumbnail').values().value(),
+        function(id, next) {
+            console.log(typeof(id));
+            gfs.remove({ _id: id.toString()}, next);
+        },
+        promise.resolve.bind(promise)
+    );
+    return promise;
+};
+
+function delete_pictures(gfs, pictures) {
+    var promise = new mongoose.Promise;
+    async.each(
+        pictures,
+        function(picture, next) {
+            delete_picture(gfs, picture).addBack(next);
+        },
+        promise.resolve.bind(promise)
+    );
+    return promise;
+};
+
+function parse_product_data(req) {
+    var promise = new mongoose.Promise;
+    var data = {tags:[]};
+    var files = [];
     var form = formidableGrid(req.db, mongo, {
         accept: ['image/.*']
     });
 
     form
         .on('file', function(name, file) {
-            pictures.push(file);
+            if (name === 'pictures') {
+                files.push(file);
+            }
         })
         .on('field', function(name, value) {
             if (name === 'pictures') {
-                var data = unescape(value);
-
-                pictures.push(JSON.parse(data));
+                files.push(JSON.parse(unescape(value)));
             } else {
-                _.extend(product, querystring.parse(name+'='+value));
+                _.extend(data, querystring.parse(name+'='+value));
             }
         })
-        .once('error', error.bind(null, res))
+        .once('error', promise.error.bind(promise))
         .once('end', function() {
-            async.map(
-                pictures,
-                handle_file.bind(null, form.gridFs),
-                function(err, pictures) {
-                    if (err) {
-                        error(res, err);
-                    } else {
-                        Product.create(_.extend(product, {pictures: pictures}))
-                            .then(function(product) {
-                                res.send(product);
-                            })
-                            .then(null, error.bind(null, res));
-                    }
-                }
-            );
-        });
+            create_pictures(form.gridFs, files)
+                .then(function(pictures) {
+                    data.pictures = pictures;
+                    promise.fulfill(data);
+                })
+                .then(null, promise.error.bind(promise));
+        })
+        .parse(req);
 
-    form.parse(req);
+    return promise;
 };
 
 router
@@ -142,7 +187,14 @@ router
                 .then(res.send.bind(res))
                 .then(null, error.bind(null, res));
         })
-        .post(create_product);
+        .post(function(req, res) {
+            parse_product_data(req)
+                .then(function(data) {
+                    return Product.create(data);
+                })
+                .then(res.send.bind(res))
+                .then(null, error.bind(null, res));
+        });
 
 router
     .param('id', function(req, res, next, id) {
@@ -150,46 +202,61 @@ router
             .findById(id)
             .exec()
                 .then(function(product) {
-                    req.product = product;
-                    next();
+                    if (product) {
+                        req.product = product;
+                        req.gridFs = GridFs(req.db, mongo);
+                        next();
+                    } else {
+                        throw _.extend(new Error('Not found'), {status: 404});
+                    }
                 })
-                .then(null, next);
+                .then(null, function(err) {
+                    res.status(err.status || 500).send(err);
+                });
     })
     .route('/:id')
-        .get(function(req, res) {
-            console.log(req.product);
-            error(res, new Error('Not implemented'));
-        })
+        .get(function(req, res) {res.send(req.product);})
         .put(function(req, res) {
-            console.log(req.product);
-            error(res, new Error('Not implemented'));
-        })
-        .delete(function(req, res) {
-            console.log(req.product);
+            parse_product_data(req)
+                .then(function(data) {
+                    // Delete the product pictures which are not present in the
+                    // the data pictures
+                    delete_pictures(
+                        req.gridFs,
+                        _.chain(req.product.pictures)
+                            .map(function(picture) {
+                                var test = function(other) {
+                                    return picture.original.equals(other.original);
+                                }
 
-            var gfs = GridFs(req.db, mongo);
-
-            async.map(
-                req.product.pictures,
-                function(picture, next) {
-                    async.map(
-                        _.chain(picture).pick('original', 'thumbnail').values().value(),
-                        function(id, file_next) {
-                            gfs.collection('fs').remove({ _id: id}, file_next);
-                        },
-                        next
+                                if (! _.some(data.pictures, test)) {
+                                    return picture;
+                                }
+                            })
+                            .compact()
+                            .value()
                     );
-                },
-                function(err) {
-                    req.product.remove(function(rm_err) {
-                        if (rm_err) {
-                            error(res, rm_err);
+
+                    // Update product with data
+                    req.product.set(data);
+                    req.product.save(function(err, product) {
+                        if (err) {
+                            console.log(err);
+                            error(res, err);
                         } else {
-                            res.sendStatus(200);
+                            res.send(product);
                         }
                     });
-                }
-            );
+                })
+                .then(null, error.bind(null, res));
+        })
+        .delete(function(req, res) {
+            delete_pictures(req.gridFs, req.product.pictures)
+                .then(function() {
+                    return Product.remove({_id: req.product._id}).exec();
+                })
+                .then(res.sendStatus.bind(res, 200))
+                .then(null, error.bind(null, res));
         });
 
 module.exports = router;
