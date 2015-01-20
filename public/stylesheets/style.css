@@ -29,6 +29,7 @@ a {
 #product-creator #fields .field-row * {
     float: right;
     width: 70%;
+    margin: 2px;
 }
 
 #product-creator #fields .field-row label {
