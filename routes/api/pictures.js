@@ -29,15 +29,12 @@ function parse_picture_data(req) {
         accept: ['image/.*']
     });
 
-    console.log('-- ', inspect(form));
-
     form.multiples = false;
     form.maxFields = 1;
 
-    console.log('-- ', inspect(form));
-
     form
         .on('file', function(name, file) {
+            console.log(name);
             files.push(file);
         })
         .once('error', promise.error.bind(promise))
@@ -84,9 +81,17 @@ router
             });
     })
     .route('/:id')
-        .get(function(req, res) {res.send(req.picture);})
+        .get(function(req, res) {
+            res.send(req.picture);
+        })
         .delete(function(req, res) {
-            res.sendStatus(501);
+            req.picture.destroy(function(err) {
+                if (err) {
+                    error(res, err);
+                } else {
+                    res.sendStatus(200);
+                }
+            });
         });
 
 module.exports = router;
