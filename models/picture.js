@@ -74,6 +74,37 @@ PictureSchema.methods.thumbnailPath = function() {
     return path.join('/', this.prefix, this.thumbnail);
 }
 
+/// #### `Picture#destroy([cb])`
+/// Destroy this pictures and all its associated files
+///
+/// __Parameters:__
+/// - `cb`, a node.js style callback.
+///
+/// __Returns:__
+/// - If callback is not provided, it returns a `mongoose.Promise`.
+PictureSchema.methods.destroy = function(cb) {
+    var picture = this;
+    var promise = new mongoose.Promise;
+    var gfs = GridFs(mongoose.connection.db, mongo);
+
+    _.bindAll(promise, 'resolve');
+    _.chain(picture).pick('original', 'thumbnail').values().each(
+        function(id) {
+            gfs.remove({ _id: id.toString()}, function(err) {
+                if (err) {
+                    console.error(err); // FIXME: report the error
+                }
+            });
+        }
+    );
+
+    picture.remove(promise.resolve);
+
+    if (cb) {
+        promise.addBack(cb);
+    } else return promise;
+}
+
 /// #### `Picture.create(original, [cb])`
 /// Create a picture instance with the given image.
 ///
